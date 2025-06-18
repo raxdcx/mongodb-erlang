@@ -72,7 +72,7 @@ transaction(Topology, Transaction, Options, Timeout) ->
       Error
   end.
 
-%% @doc Get worker from pool and run transaction with additioanl query options on it. Suitable for read transactions
+%% @doc Get worker from pool and run transaction with additional query options on it. Suitable for read transactions
 -spec transaction_query(pid() | atom(), fun()) -> any().
 transaction_query(Topology, Transaction) ->
   transaction_query(Topology, Transaction, #{}).
