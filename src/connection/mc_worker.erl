@@ -5,6 +5,7 @@
 
 -define(WRITE(Req), is_record(Req, insert); is_record(Req, update); is_record(Req, delete)).
 -define(READ(Req), is_record(Request, 'query'); is_record(Request, getmore)).
+-define(OP_MSG(Req), is_record(Request, 'op_msg_command'); is_record(Request, 'op_msg_write_op')).
 -define(LOG_DEFAULT_DB, fun() -> error_logger:info_msg("Using default 'test' database"), <<"test">> end).
 
 -export([start_link/1, database/2, disconnect/1, hibernate/1]).
@@ -21,7 +22,7 @@
   request_storage = #{} :: map(),
   buffer = <<>> :: binary(),
   conn_state :: conn_state(),
-  hibernate_timer :: reference() | undefined,
+  hibernate_timer :: timer:tref() | reference() | undefined,
   next_req_fun :: fun(),
   net_module :: ssl | gen_tcp
 }).
@@ -47,7 +48,7 @@ database(Worker, Database) ->
   gen_server:cast(Worker, {database, Database}).
 
 init(Options) ->
-  case mc_worker_logic:connect(Options) of
+  case install_mc_worker_info_and_connect(Options) of
     {ok, Socket} ->
       ConnState = form_state(Options),
       try_register(Options),
@@ -63,6 +64,50 @@ init(Options) ->
       proc_lib:init_ack(Error)
   end.
 
+install_mc_worker_info_and_connect(Conf) ->
+  try
+    %% We install info (protocol type) about the worker in an ETS table outside
+    %% the process so we can construct the right kind of messages to send to
+    %% the process
+    ProtocolType =
+      case application:get_env(mongodb, use_legacy_protocol, auto) of
+        true -> legacy;
+        false -> op_msg; %% modern protocol based on the op_msg package
+        auto ->
+          %% Automatically detect which protocol to use. We send a
+          %% command using the old protocol. If we get back error code
+          %% 352* (UnsupportedOpQueryCommand), we are in a version that
+          %% don't support the legacy protocol so we use the op_msg based
+          %% protocol instead.
+          %% * https://github.com/mongodb/mongo/blob/master/src/mongo/base/error_codes.yml
+          {ok, InitSocket} = mc_worker_logic:connect(Conf),
+          NetModule = get_set_opts_module(Conf),
+          Database = mc_utils:get_value(database, Conf, <<"admin">>),
+
+          Command = bson:document([{<<"notExistingCommandXyzErlang">>, <<"void">>}]),
+          Request = #'query'{
+            collection = <<"$cmd">>,
+            selector = Command,
+            batchsize = -1
+          },
+          Response = mc_connection_man:request_raw_no_parse(InitSocket, Database, Request, NetModule),
+          %% We have to create a new connection because the previous one does not
+          %% accept new commands after it got a bad command
+          NetModule:close(InitSocket),
+          case Response of
+            [{_, #reply{documents = [#{<<"code">> := 352, <<"ok">> := 0.0}|_]}}|_] ->
+              op_msg;
+            _ErrorResponse ->
+              legacy
+          end
+      end,
+    mc_worker_pid_info:set_info(self(), #{protocol_type => ProtocolType}),
+    mc_worker_logic:connect(Conf)
+  catch
+    What:Reason:_ ->
+      {error, {What, Reason}}
+  end.
+
 handle_call(NewState, _, State = #state{conn_state = OldState}) when is_record(NewState, conn_state) ->  % update state, return old
   {reply, {ok, OldState}, State#state{conn_state = NewState}};
 handle_call(CMD = #ensure_index{collection = Coll, index_spec = IndexSpec}, _, State) -> % ensure index request with insert request
@@ -76,6 +121,8 @@ handle_call(CMD = #ensure_index{collection = Coll, index_spec = IndexSpec}, _, S
       ConnState#conn_state.database,
       #insert{collection = mc_worker_logic:update_dbcoll(Coll, <<"system.indexes">>), documents = [Index]}),
   {reply, ok, State};
+handle_call(Request, From, State) when ?OP_MSG(Request) ->  % MongoDB OpMsg request
+  process_op_msg_request(Request, From, State);
 handle_call(Request, From, State) when ?WRITE(Request) ->  % write requests (deprecated)
   process_write_request(Request, From, State);
 handle_call(Request, From, State) when ?READ(Request) -> % read requests (and all through command)
@@ -121,6 +168,39 @@ terminate(_, State = #state{net_module = NetModule}) ->
 %% @hidden
 code_change(_Old, State, _Extra) ->
   {ok, State}.
+
+process_op_msg_request(Request, From, State) ->
+  #state{socket = Socket,
+    request_storage = RequestStorage,
+    conn_state = CS,
+    net_module = NetModule,
+    next_req_fun = Next} = State,
+  Database = CS#conn_state.database,
+  {ok, PacketSize, Id} = mc_worker_logic:make_request(Socket, NetModule, Database, Request),
+  UState = need_hibernate(PacketSize, State),
+  case get_op_msg_write_concern(Request) of
+    {_, {<<"w">>, 0}} -> %no concern request
+      Next(),
+      {reply,
+        #op_msg_response{response_doc = #{<<"ok">> => 1.0}},
+        UState};
+    _ ->  %ordinary request with response
+      Next(),
+      RespFun = mc_worker_logic:get_resp_fun(Request, From),  % save function, which will be called on response
+      URStorage = RequestStorage#{Id => RespFun},
+      {noreply, UState#state{request_storage = URStorage}}
+  end.
+
+get_op_msg_write_concern(#op_msg_write_op{extra_fields = ExtraFields}) ->
+  case lists:keyfind(<<"writeConcern">>, 1, ExtraFields) of
+    {_, WC} -> WC;
+    _ -> not_found
+  end;
+get_op_msg_write_concern(#op_msg_command{command_doc = DocList}) ->
+  case lists:keyfind(<<"writeConcern">>, 1, DocList) of
+    {_, WC} -> WC;
+    _ -> not_found
+  end.
 
 %% @private
 process_read_request(Request, From, State) ->

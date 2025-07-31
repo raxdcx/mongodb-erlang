@@ -16,7 +16,7 @@
 -define(UNAUTHORIZED_ERROR(C), C =:= 10057; C =:= 16550).
 
 %% API
--export([request_worker/2]).
+-export([request_worker/2, process_reply/2]).
 -export([read/2, read_one/2, read_one_sync/4]).
 -export([op_msg/2, op_msg_sync/4, op_msg_read_one/2, op_msg_raw_result/2]).
 -export([command/2, command/3, database_command/3, database_command/4, request_raw_no_parse/4]).

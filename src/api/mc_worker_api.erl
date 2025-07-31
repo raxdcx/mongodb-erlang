@@ -108,7 +108,7 @@ insert(Connection, Coll, Doc, WC, DB) when is_tuple(Doc); is_map(Doc) ->
   {Res, UDoc};
 insert(Connection, Coll, Docs, WC, DB) ->
   ConvertedDocs = prepare(Docs, fun assign_id/1),
-  UseLegacyProtocol = mc_utils:use_legacy_protocol(),
+  UseLegacyProtocol = mc_utils:use_legacy_protocol(Connection),
   insert(UseLegacyProtocol, Connection, Coll, WC, DB, ConvertedDocs).
 
 insert(true, Connection, Coll, WriteConcern, DB, ConvertedDocs) ->
@@ -158,7 +158,7 @@ update(Connection, Coll, Selector, Doc, Upsert, MultiUpdate, WC) ->
 -spec update(pid(), collection(), selector(), map() | bson:document(), boolean(), boolean(), bson:document(), database()) -> {boolean(), map()}.
 update(Connection, Coll, Selector, Doc, Upsert, MultiUpdate, WriteConcern, DB) ->
   ConvertedDocs = prepare(Doc, fun(D) -> D end),
-  UseLegacyProtocol = mc_utils:use_legacy_protocol(),
+  UseLegacyProtocol = mc_utils:use_legacy_protocol(Connection),
   update(UseLegacyProtocol, Connection, Coll, Selector, ConvertedDocs, Upsert, MultiUpdate, WriteConcern, DB).
 
 update(true, Connection, Coll, Selector, ConvertedDocs, Upsert, MultiUpdate, WriteConcern, DB) ->
@@ -224,7 +224,7 @@ delete_limit(Connection, Coll, Selector, Limit, WriteConcern) ->
 %% @doc Delete selected documents
 -spec delete_limit(pid(), collection(), selector(), integer(), bson:document(), database()) -> {boolean(), map()}.
 delete_limit(Connection, Coll, Selector, Limit, WriteConcern, DB) ->
-  UseLegacyProtocol = mc_utils:use_legacy_protocol(),
+  UseLegacyProtocol = mc_utils:use_legacy_protocol(Connection),
   delete_limit(UseLegacyProtocol, Connection, Coll, Selector, Limit, WriteConcern, DB).
 
 delete_limit(true, Connection, Coll, Selector, Limit, WriteConcern, DB) ->
@@ -269,7 +269,7 @@ find_one(Connection, Coll, Selector, Args, Db) ->
   Projector = maps:get(projector, Args, #{}),
   Skip = maps:get(skip, Args, 0),
   ReadPref = maps:get(readopts, Args, #{<<"mode">> => <<"primary">>}),
-  UseLegacyProtocol = mc_utils:use_legacy_protocol(),
+  UseLegacyProtocol = mc_utils:use_legacy_protocol(Connection),
   find_one(UseLegacyProtocol, Connection, Coll, Selector, Projector, Skip, ReadPref, Db).
 
 find_one(true, Connection, Coll, Selector, Projector, Skip, ReadPref, Db) ->
@@ -312,7 +312,7 @@ find_one(Cmd = #{connection := Connection, collection := Collection, selector :=
 
 -spec find_one(pid() | atom(), query()) -> map() | undefined.
 find_one(Connection, Query) when is_record(Query, query) ->
-  UseLegacyProtocol = mc_utils:use_legacy_protocol(),
+  UseLegacyProtocol = mc_utils:use_legacy_protocol(Connection),
   find_one_with_query_record(UseLegacyProtocol, Connection, Query).
 
 find_one_with_query_record(true, Connection, Query) ->
@@ -347,7 +347,7 @@ find(Connection, Coll, Selector, Args, Db) ->
   Projector = maps:get(projector, Args, #{}),
   Skip = maps:get(skip, Args, 0),
   BatchSize =
-        case mc_utils:use_legacy_protocol() of
+        case mc_utils:use_legacy_protocol(Connection) of
             true ->
                 maps:get(batchsize, Args, 0);
             false ->
@@ -382,7 +382,7 @@ find(Cmd = #{connection := Connection, collection := Collection, selector := Sel
 
 -spec find(pid() | atom(), query()) -> {ok, cursor()} | [].
 find(Connection, Query) when is_record(Query, query) ->
-  FixedQuery = fixed_query(mc_utils:use_legacy_protocol(), Query),
+  FixedQuery = fixed_query(mc_utils:use_legacy_protocol(Connection), Query),
   case mc_connection_man:read(Connection, FixedQuery) of
     [] -> [];
     {ok, Cursor} when is_pid(Cursor) ->
@@ -473,7 +473,7 @@ ensure_index(Connection, Coll, IndexSpec) ->
 
 -spec ensure_index(pid(), colldb(), bson:document(), database()) -> ok | {error, any()}.
 ensure_index(Connection, Coll, IndexSpec, DB) ->
-  ensure_index(mc_utils:use_legacy_protocol(), Connection, Coll, IndexSpec, DB).
+  ensure_index(mc_utils:use_legacy_protocol(Connection), Connection, Coll, IndexSpec, DB).
 
 ensure_index(true, Connection, Coll, IndexSpec, DB) ->
   mc_connection_man:request_worker(Connection, #ensure_index{database = DB, collection = Coll, index_spec = IndexSpec});

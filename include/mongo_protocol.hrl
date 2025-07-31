@@ -49,7 +49,7 @@
 -record(op_msg_write_op, {
   command :: command(),
   collection :: colldb(),
-  database :: [] | mc_worker_api:database(),
+  database :: undefined | mc_worker_api:database(),
   extra_fields = [] :: bson:document() | nonempty_list({binary(),any()}),
   documents_name = <<"documents">> :: bson:utf8(),
   documents = [] :: any()
@@ -60,7 +60,7 @@
 }).
 
 -record(op_msg_command, {
-  database :: [] | mc_worker_api:database(),
+  database :: undefined | mc_worker_api:database(),
   command_doc :: bson:document() | nonempty_list({binary(),any()})
 }).
 
