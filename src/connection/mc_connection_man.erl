@@ -87,8 +87,8 @@ command(Connection, Query = #query{selector = Cmd}) ->
         false ->
           {true, mc_connection_man:op_msg_raw_result(Connection, FixedQuery)}
       end;
-    BatchSize ->
-      case read(Connection, FixedQuery, BatchSize) of
+    _BatchSize ->
+      case read(Connection, FixedQuery) of
         [] -> [];
         {ok, Cursor} when is_pid(Cursor) ->
           {ok, Cursor}

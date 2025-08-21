@@ -9,6 +9,7 @@
 all() ->
   [
     ensure_index_test,
+    per_connection_protocol_type_test,
     count_test,
     find_one_test,
     find_test,
