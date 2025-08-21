@@ -173,9 +173,6 @@ op_msg_raw_result(Connection, OpMsg) ->
       erlang:error({error, FromServer})
   end.
 
-select_batchsize(undefined, Batchsize) -> Batchsize;
-select_batchsize(Batchsize, _) -> Batchsize.
-
 request_raw_no_parse(Socket, Database, Request, NetModule) ->
   Timeout = mc_utils:get_timeout(),
   ok = set_opts(Socket, NetModule, false),
@@ -227,6 +224,10 @@ process_error(Code, _) when ?UNAUTHORIZED_ERROR(Code) ->
   erlang:error(unauthorized);
 process_error(_, Doc) ->
   erlang:error({bad_query, Doc}).
+
+%% @private
+select_batchsize(undefined, Batchsize) -> Batchsize;
+select_batchsize(Batchsize, _) -> Batchsize.
 
 %% @private
 determine_cursor(#{<<"cursor">> := Cursor}) -> find_batchsize(Cursor);
