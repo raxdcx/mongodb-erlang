@@ -7,11 +7,11 @@ on:
 
 jobs:
   dialyzer:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     container:
       image: erlang:24-slim
     steps:
-      - uses: actions/checkout@v2.0.0
+      - uses: actions/checkout@v4
       - name: Cache PLTs
         id: cache-plts
         uses: actions/cache@v2
