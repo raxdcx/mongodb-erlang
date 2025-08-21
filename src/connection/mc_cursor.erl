@@ -121,6 +121,7 @@ start_link(Connection, Collection, Cursor, BatchSize, Batch, DB) ->
 
 %% @hidden
 init([Owner, Connection, Collection, Cursor, BatchSize, Batch,DB]) ->
+  process_flag(trap_exit, true),
   Monitor = erlang:monitor(process, Owner),
   {ok, #state{
     connection = Connection,

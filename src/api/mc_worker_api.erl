@@ -494,7 +494,6 @@ command(Db, Connection, Command) ->
 command(Db, Connection, Command, IsSlaveOk) ->
   mc_connection_man:database_command(Connection, Db, Command, IsSlaveOk).
 
-
 %% @private
 -spec prepare(tuple() | list() | map(), fun()) -> list().
 prepare(Docs, AssignFun) when is_tuple(Docs) -> %bson

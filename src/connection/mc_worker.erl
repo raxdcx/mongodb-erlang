@@ -48,64 +48,28 @@ database(Worker, Database) ->
   gen_server:cast(Worker, {database, Database}).
 
 init(Options) ->
-  case install_mc_worker_info_and_connect(Options) of
+  case mc_worker_logic:connect(Options) of
     {ok, Socket} ->
       ConnState = form_state(Options),
       try_register(Options),
       NetModule = get_set_opts_module(Options),
       NextReqFun = mc_utils:get_value(next_req_fun, Options, fun() -> ok end),
-      proc_lib:init_ack({ok, self()}),
-      gen_server:enter_loop(?MODULE, [],
-        #state{socket = Socket,
-          conn_state = ConnState,
-          net_module = NetModule,
-          next_req_fun = NextReqFun});
+      DefaultUseLegacyProtocol = application:get_env(mongodb, use_legacy_protocol, auto),
+      UseLegacyProtocol = mc_utils:get_value(use_legacy_protocol, Options, DefaultUseLegacyProtocol),
+      ProtoOpts = #{use_legacy_protocol => UseLegacyProtocol},
+      case mc_worker_pid_info:install_mc_worker_info(Options, NetModule, ConnState#conn_state.database, ProtoOpts) of
+        ok ->
+          proc_lib:init_ack({ok, self()}),
+          gen_server:enter_loop(?MODULE, [],
+            #state{socket = Socket,
+              conn_state = ConnState,
+              net_module = NetModule,
+              next_req_fun = NextReqFun});
+        {error, _} = Error ->
+          proc_lib:init_ack(Error)
+      end;
     Error ->
       proc_lib:init_ack(Error)
-  end.
-
-install_mc_worker_info_and_connect(Conf) ->
-  try
-    %% We install info (protocol type) about the worker in an ETS table outside
-    %% the process so we can construct the right kind of messages to send to
-    %% the process
-    ProtocolType =
-      case application:get_env(mongodb, use_legacy_protocol, auto) of
-        true -> legacy;
-        false -> op_msg; %% modern protocol based on the op_msg package
-        auto ->
-          %% Automatically detect which protocol to use. We send a
-          %% command using the old protocol. If we get back error code
-          %% 352* (UnsupportedOpQueryCommand), we are in a version that
-          %% don't support the legacy protocol so we use the op_msg based
-          %% protocol instead.
-          %% * https://github.com/mongodb/mongo/blob/master/src/mongo/base/error_codes.yml
-          {ok, InitSocket} = mc_worker_logic:connect(Conf),
-          NetModule = get_set_opts_module(Conf),
-          Database = mc_utils:get_value(database, Conf, <<"admin">>),
-
-          Command = bson:document([{<<"notExistingCommandXyzErlang">>, <<"void">>}]),
-          Request = #'query'{
-            collection = <<"$cmd">>,
-            selector = Command,
-            batchsize = -1
-          },
-          Response = mc_connection_man:request_raw_no_parse(InitSocket, Database, Request, NetModule),
-          %% We have to create a new connection because the previous one does not
-          %% accept new commands after it got a bad command
-          NetModule:close(InitSocket),
-          case Response of
-            [{_, #reply{documents = [#{<<"code">> := 352, <<"ok">> := 0.0}|_]}}|_] ->
-              op_msg;
-            _ErrorResponse ->
-              legacy
-          end
-      end,
-    mc_worker_pid_info:set_info(self(), #{protocol_type => ProtocolType}),
-    mc_worker_logic:connect(Conf)
-  catch
-    What:Reason:_ ->
-      {error, {What, Reason}}
   end.
 
 handle_call(NewState, _, State = #state{conn_state = OldState}) when is_record(NewState, conn_state) ->  % update state, return old

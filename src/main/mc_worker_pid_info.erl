@@ -6,6 +6,8 @@
 
 -behaviour(gen_server).
 
+-include("mongo_protocol.hrl").
+
 -export([start_link/0,
   init/1,
   terminate/2,
@@ -15,7 +17,8 @@
   set_info/2,
   discard_info/1,
   get_protocol_type/1,
-  handle_info/2]).
+  handle_info/2,
+  install_mc_worker_info/4]).
 
 -define(CLEAN_TABLE_PERIOD_MINS, 30).
 -define(CLEAN_TABLE_MESSAGE, clean_table).
@@ -42,10 +45,9 @@ start_cleanup_timer_update_state(State) ->
 terminate(_,_) ->
   ets:delete(?MC_WORKER_PID_INFO_TAB_NAME).
 
-%% These functions does not do anyting as this server is just a holder of an
-%% ETS table
-handle_cast(_Request, _State) -> {noreply, #{}}.
-handle_call(_Request, _From, _State) -> {reply, ok, #{}}.
+%% These functions does not do anything as this server is just a holder of an ETS table
+handle_cast(_Request, State) -> {noreply, State}.
+handle_call(_Request, _From, State) -> {reply, {error, ignore}, State}.
 
 handle_info({timeout,
   TimerRef,
@@ -92,4 +94,44 @@ get_protocol_type(MCWorkerPID) ->
       %% mc_worker process was created before the hot_upgrade so we use
       %% the legacy protocol as this was what existed before
       legacy
+  end.
+
+%% This process should be called from mc_worker processes to install their info
+%% in the ?MC_WORKER_PID_INFO_TAB_NAME ETS table
+install_mc_worker_info(Options, NetModule, Database, Opts) ->
+  UseLegacyProtocol = maps:get(use_legacy_protocol, Opts),
+  try
+    ProtocolType = detect_protocol_type(UseLegacyProtocol, Options, NetModule, Database),
+    mc_worker_pid_info:set_info(self(), #{protocol_type => ProtocolType}),
+    ok
+  catch
+    What:Reason ->
+      {error, {What, Reason}}
+  end.
+%% true - use the legacy protocol
+%% false - use the modern protocol based on the op_msg package
+%% auto - detect what protocol to use based on the database
+detect_protocol_type(true, _ConnectionOpts, _NetModule, _Database)  -> legacy;
+detect_protocol_type(false, _ConnectionOpts, _NetModule, _Database) -> op_msg;
+detect_protocol_type(auto, ConnectionOpts, NetModule, Database) ->
+  %% Automatically detect which protocol to use. We send a `hello' command using
+  %% the new protocol. If we have our connection closed by the server, it means
+  %% it doesn't support the new protocol.
+  %% See also:
+  %% * https://github.com/mongodb/mongo/blob/5e494138af456f42381ad08748cc7fbc4ace7a60/src/mongo/base/error_codes.yml
+  %% * https://www.mongodb.com/docs/manual/reference/command/hello/#mongodb-dbcommand-dbcmd.hello
+  %% * https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/#std-label-wire-op-msg
+  {ok, Socket} = mc_worker_logic:connect(ConnectionOpts),
+  Command = bson:fields({hello, 1}),
+  Request = #op_msg_command{command_doc = Command, database = Database},
+  try mc_connection_man:request_raw_no_parse(Socket, Database, Request, NetModule) of
+    [{_, #op_msg_response{response_doc = #{<<"ok">> := _}}} | _] ->
+      op_msg;
+    _ErrorResponse ->
+      legacy
+  catch
+    _:_ ->
+      legacy
+  after
+    NetModule:close(Socket)
   end.

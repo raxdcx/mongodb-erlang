@@ -30,6 +30,7 @@ connect(Conf) ->
 
 -spec make_request(gen_tcp:socket() | ssl:sslsocket(), atom(), mc_worker_api:database(), mongo_protocol:message() | list(mongo_protocol:message())) ->
   {ok | {error, any()}, integer(), pos_integer()}.
+
 make_request(Socket, NetModule, Database, Request) ->
   {Packet, Id} = encode_request(Database, Request),
   {NetModule:send(Socket, Packet), iolist_size(Packet), Id}.

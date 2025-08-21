@@ -241,7 +241,7 @@ request_raw(Socket, Database, Request, NetModule) ->
   {ok, _, _} = mc_worker_logic:make_request(Socket, NetModule, Database, Request),
   Responses = recv_all(Socket, Timeout, NetModule),
   ok = set_opts(Socket, NetModule, true),
-  Reply = hd(Responses),
+  {_Id, Reply} = hd(Responses),
   reply(Reply).
 
 %% @private
@@ -264,11 +264,3 @@ find_batchsize(Bson) when is_tuple(Bson) ->
     V -> V
   end;
 find_batchsize(_) -> 101.
-
-fix_command_obj_list(Map) when is_map(Map) ->
-  fix_command_obj_list(maps:to_list(Map));
-fix_command_obj_list(Tuple) when is_tuple(Tuple) ->
-  fix_command_obj_list(bson:fields(Tuple));
-fix_command_obj_list(List) when is_list(List) ->
-  %% we have to try to figure out what the command field is and put it first as the command field need to go first
-  List.
