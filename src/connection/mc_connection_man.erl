@@ -17,8 +17,8 @@
 
 %% API
 -export([request_worker/2, process_reply/2]).
--export([read/2, read/3, read_one/2, read_one_sync/4]).
--export([op_msg/2, op_msg_sync/4, op_msg_read_one/2, op_msg_raw_result/2]).
+-export([read/2, read/3, read_one/2]).
+-export([op_msg/2, op_msg_read_one/2, op_msg_raw_result/2]).
 -export([command/2, command/3, database_command/3, database_command/4, request_raw_no_parse/4]).
 
 -spec read(pid() | atom(), query()) -> [] | {ok, pid()}.
@@ -50,13 +50,6 @@ read_one(Connection, Request) ->
   {0, Docs} = request_worker(Connection, Request#'query'{batchsize = -1}),
   case Docs of
     [] -> undefined;
-    [Doc | _] -> Doc
-  end.
-
-read_one_sync(Socket, Database, Request, SetOpts) ->
-  {0, Docs} = request_raw(Socket, Database, Request#'query'{batchsize = -1}, SetOpts),
-  case Docs of
-    [] -> #{};
     [Doc | _] -> Doc
   end.
 
@@ -170,9 +163,6 @@ op_msg_read_one(Connection, OpMsg) ->
       erlang:error({error_unexpected_response, Response})
   end.
 
-op_msg_sync(Socket, Database, Request, SetOpts) ->
-  request_raw(Socket, Database, Request, SetOpts).
-
 op_msg_raw_result(Connection, OpMsg) ->
   Timeout = mc_utils:get_timeout(),
   FromServer = gen_server:call(Connection, OpMsg, Timeout),
@@ -238,18 +228,6 @@ process_error(Code, _) when ?UNAUTHORIZED_ERROR(Code) ->
   erlang:error(unauthorized);
 process_error(_, Doc) ->
   erlang:error({bad_query, Doc}).
-
-%% @private
--spec request_raw(any(), mc_worker_api:database(), mongo_protocol:message(), module()) ->
-  ok | {non_neg_integer(), [map()]}.
-request_raw(Socket, Database, Request, NetModule) ->
-  Timeout = mc_utils:get_timeout(),
-  ok = set_opts(Socket, NetModule, false),
-  {ok, _, _} = mc_worker_logic:make_request(Socket, NetModule, Database, Request),
-  Responses = recv_all(Socket, Timeout, NetModule),
-  ok = set_opts(Socket, NetModule, true),
-  {_Id, Reply} = hd(Responses),
-  reply(Reply).
 
 %% @private
 determine_cursor(#{<<"cursor">> := Cursor}) -> find_batchsize(Cursor);
