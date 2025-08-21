@@ -89,12 +89,7 @@ transaction_query(Topology, Transaction, Options) ->
 
 -spec transaction_query(pid() | atom(), fun(), map(), integer() | infinity) -> any().
 transaction_query(Topology, Transaction, Options, Timeout) ->
-  case mc_topology:get_pool(Topology, Options) of
-    {ok, Pool = #{pool := C}} ->
-      poolboy:transaction(C, fun(Worker) -> Transaction(Pool#{pool => Worker}) end, Timeout);
-    Error ->
-      Error
-  end.
+  transaction(Topology, Transaction, Options, Timeout).
 
 -spec find_one_query(map(), collection(), selector(), projector(), integer()) -> query().
 find_one_query(#{server_type := ServerType, read_preference := RPrefs}, Coll, Selector, Projector, Skip) ->
