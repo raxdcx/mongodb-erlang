@@ -17,26 +17,30 @@
 
 %% API
 -export([request_worker/2, process_reply/2]).
--export([read/2, read_one/2, read_one_sync/4]).
+-export([read/2, read/3, read_one/2, read_one_sync/4]).
 -export([op_msg/2, op_msg_sync/4, op_msg_read_one/2, op_msg_raw_result/2]).
 -export([command/2, command/3, database_command/3, database_command/4, request_raw_no_parse/4]).
 
 -spec read(pid() | atom(), query()) -> [] | {ok, pid()}.
-read(Connection, Request = #'query'{collection = Collection, batchsize = BatchSize}) ->
-  read(Connection, Request, Collection, BatchSize);
-read(Connection, #'op_msg_command'{command_doc = ([{_, Collection} | _ ] = Fields)} = Request)  ->
+read(Connection, Request) -> read(Connection, Request, undefined).
+
+-spec read(pid() | atom(), query() | op_msg_command(), undefined | mc_worker_api:batchsize()) -> [] | {ok, pid()}.
+read(Connection, Request = #'query'{collection = Collection, batchsize = BatchSize, database = DB}, CmdBatchSize) ->
+  read(Connection, Request, Collection, select_batchsize(CmdBatchSize, BatchSize), DB);
+read(Connection, Request = #'op_msg_command'{database = DB, command_doc = ([{_, Collection} | _ ] = Fields)},
+    _CmdBatchSize)  ->
   BatchSize = case lists:keyfind(<<"batchSize">>, 1, Fields) of
     {_, Size} -> Size;
     false -> 101
   end,
-  read(Connection, Request, Collection, BatchSize).
+  read(Connection, Request, Collection, BatchSize, DB).
 
-read(Connection, Request, Collection, BatchSize) ->
+read(Connection, Request, Collection, BatchSize, DB) ->
   case request_worker(Connection, Request) of
     {_, []} ->
       [];
     {Cursor, Batch} ->
-      mc_cursor:start(Connection, Collection, Cursor, BatchSize, Batch);
+      mc_cursor:start_link(Connection, Collection, Cursor, BatchSize, Batch, DB);
     X ->
       erlang:error({error_unexpected_response, X})
   end.
@@ -87,8 +91,8 @@ command(Connection, Query = #query{selector = Cmd}) ->
         false ->
           {true, mc_connection_man:op_msg_raw_result(Connection, FixedQuery)}
       end;
-    _BatchSize ->
-      case read(Connection, FixedQuery) of
+    BatchSize ->
+      case read(Connection, FixedQuery, BatchSize) of
         [] -> [];
         {ok, Cursor} when is_pid(Cursor) ->
           {ok, Cursor}
@@ -179,6 +183,9 @@ op_msg_raw_result(Connection, OpMsg) ->
     _ ->
       erlang:error({error, FromServer})
   end.
+
+select_batchsize(undefined, Batchsize) -> Batchsize;
+select_batchsize(Batchsize, _) -> Batchsize.
 
 request_raw_no_parse(Socket, Database, Request, NetModule) ->
   Timeout = mc_utils:get_timeout(),

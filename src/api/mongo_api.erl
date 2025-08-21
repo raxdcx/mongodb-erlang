@@ -23,6 +23,7 @@
   delete/3,
   count/4,
   ensure_index/3,
+  command/3,
   disconnect/1]).
 
 -spec connect(atom(), list(), proplists:proplist(), proplists:proplist()) -> {ok, pid()}.
@@ -103,6 +104,14 @@ ensure_index(Topology, Coll, IndexSpec) ->
     fun(#{pool := Worker}) ->
       mc_worker_api:ensure_index(Worker, Coll, IndexSpec)
     end, #{}).
+
+-spec command(atom() | pid(), selector(), timeout()) -> transaction_result(integer()).
+command(Topology, Command, Timeout) ->
+  mongoc:transaction_query(Topology,
+    fun(Conf = #{pool := Worker}) ->
+      Query = mongoc:command_query(Conf, Command),
+      mc_worker_api:command(Worker, Query)
+    end, #{}, Timeout).
 
 -spec disconnect(atom() | pid()) -> ok.
 disconnect(Topology) ->

@@ -62,15 +62,19 @@ transaction(Topology, Transaction, Options, Timeout) ->
       catch
         error:not_master ->
           mc_topology:update_topology(Topology),
+          error_logger:error_msg("transaction error:~p reason:~p~n", [error, not_master]),
           {error, not_master};
         error:{bad_query, {not_master, _}} ->
           mc_topology:update_topology(Topology),
+          error_logger:error_msg("transaction error:~p reason:~p~n", [error, not_master]),
           {error, not_master};
-        _:R ->
+        E:R ->
           mc_topology:update_topology(Topology),
+          error_logger:error_msg("transaction error:~p reason:~p~n", [E, R]),
           {error, R}
       end;
     Error ->
+      error_logger:error_msg("mc_topology get_pool error:~p~n", [Error]),
       Error
   end.
 
