@@ -54,38 +54,12 @@ read_one(Connection, Request) ->
   end.
 
 command(Connection, Query = #query{selector = Cmd}) ->
-  FixedQuery =
-    case mc_utils:use_legacy_protocol(Connection) of
-      true ->
-        Query#query{batchsize = -1};
-      false ->
-        #query{database = DB, slaveok = SlaveOk, selector = Selector} = Query,
-        Fields = bson:fields(Selector),
-        NewSelector =
-          case {lists:keyfind(<<"$readPreference">>, 1, Fields), SlaveOk} of
-            {{<<"$readPreference">>, _}, _} -> Selector;
-            {false, true} ->
-              bson:document(Fields ++ [{<<"$readPreference">>, #{<<"mode">> => <<"primaryPreferred">>}}]);
-            {false, false} ->
-              %% primary is the default mode so we do not need to change anything
-              Fields
-          end,
-        #'op_msg_command'{
-          database = DB,
-          command_doc = NewSelector
-        }
-    end,
+  QueryOrOpMsg = query_to_op_msg_cmd(mc_utils:use_legacy_protocol(Connection), Query),
   case determine_cursor(Cmd) of
     false ->
-      case mc_utils:use_legacy_protocol(Connection) of
-        true ->
-          Doc = read_one(Connection, FixedQuery),
-          process_reply(Doc, FixedQuery);
-        false ->
-          {true, mc_connection_man:op_msg_raw_result(Connection, FixedQuery)}
-      end;
+      legacy_command(mc_utils:use_legacy_protocol(Connection), Connection, QueryOrOpMsg);
     BatchSize ->
-      case read(Connection, FixedQuery, BatchSize) of
+      case read(Connection, QueryOrOpMsg, BatchSize) of
         [] -> [];
         {ok, Cursor} when is_pid(Cursor) ->
           {ok, Cursor}
@@ -97,6 +71,31 @@ command(Connection, Command) when not is_record(Command, query) ->
       collection = <<"$cmd">>,
       selector = Command
     }).
+
+legacy_command(true, Connection, Query) ->
+  Doc = read_one(Connection, Query),
+  process_reply(Doc, Query);
+legacy_command(false, Connection, OpMsg) ->
+  {true, mc_connection_man:op_msg_raw_result(Connection, OpMsg)}.
+
+query_to_op_msg_cmd(true, Query) ->
+  Query#query{batchsize = -1};
+query_to_op_msg_cmd(false, Query) ->
+  #query{database = DB, slaveok = SlaveOk, selector = Selector} = Query,
+  Fields = bson:fields(Selector),
+  NewSelector =
+    case {lists:keyfind(<<"$readPreference">>, 1, Fields), SlaveOk} of
+      {{<<"$readPreference">>, _}, _} -> Selector;
+      {false, true} ->
+        bson:document(Fields ++ [{<<"$readPreference">>, #{<<"mode">> => <<"primaryPreferred">>}}]);
+      {false, false} ->
+        %% primary is the default mode so we do not need to change anything
+        Fields
+    end,
+  #'op_msg_command'{
+    database = DB,
+    command_doc = NewSelector
+  }.
 
 command(Connection, Command, _IsSlaveOk = true) ->
   command(Connection,
