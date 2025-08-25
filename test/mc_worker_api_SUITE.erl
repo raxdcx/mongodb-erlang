@@ -6,7 +6,7 @@
 -include("mongo_protocol.hrl").
 
 
--compile(export_all).
+-compile([export_all, nowarn_export_all]).
 
 all() ->
   [
@@ -31,7 +31,7 @@ end_per_suite(_Config) ->
 
 init_per_testcase(Case, Config) ->
   {ok, Connection} = mc_worker_api:connect([{database, ?config(database, Config)}, {login, <<"user">>}, {password, <<"test">>}, {w_mode, safe}]),
-  [{connection, Connection}, {collection, mc_test_utils:collection(Case)} | Config].
+  [{connection, Connection}, {collection, mc_test_utils:collection(?MODULE, Case)} | Config].
 
 end_per_testcase(_Case, Config) ->
   Connection = ?config(connection, Config),
@@ -134,6 +134,12 @@ insert_and_delete(Config) ->
 
   mc_worker_api:delete_one(Connection, Collection, #{}),
   3 = mc_worker_api:count(Connection, Collection, #{}),
+
+  mc_worker_api:delete_limit(Connection, Collection, #{}, 1),
+  2 = mc_worker_api:count(Connection, Collection, #{}),
+
+  mc_worker_api:delete(Connection, Collection, #{}),
+  0 = mc_worker_api:count(Connection, Collection, #{}),
   Config.
 
 insert_map(Config) ->

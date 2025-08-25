@@ -42,9 +42,15 @@ If you are choosing between using
 [mongos](https://docs.mongodb.com/manual/reference/program/mongos/) and
 using mongo shard with `mongo_api` - prefer mongos and use `mc_worker_api`.
 
+By default, this driver works only with MongoDB version 5.0 and below as it uses
+a legacy protocol that was removed in MongoDB 5.1. However, by setting the
+Erlang application setting `use_legacy_protocol` to `false` (for example by
+calling `application:set_env(mongodb, use_legacy_protocol, false)`), one can
+make `mc_worker_api` use the modern protocol so that it works with MongoDB
+5.1+.
+
 mc_worker_api -- direct connection client
 ---------------------------------
-
 ### Connecting
 To connect to a database `test` on mongodb server listening on
 `localhost:27017` (or any address & port of your choosing)
