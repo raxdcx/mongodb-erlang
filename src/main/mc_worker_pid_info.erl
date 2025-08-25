@@ -30,7 +30,6 @@ start_link() ->
 
 init(_) ->
   ets:new(?MC_WORKER_PID_INFO_TAB_NAME, [public, named_table, {read_concurrency, true}]),
-  erlang:start_timer(timer:minutes(?CLEAN_TABLE_PERIOD_MINS), self(), ?CLEAN_TABLE_MESSAGE, []),
   {ok, start_cleanup_timer_update_state(#{})}.
 
 start_cleanup_timer_update_state(State) ->
