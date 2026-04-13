@@ -139,9 +139,11 @@ process_op_msg_response(From) ->
 %% @private
 do_connect(Host, Port, Timeout, true, Opts) ->
   {ok, _} = application:ensure_all_started(ssl),
-  ssl:connect(Host, Port, [binary, {active, true}, {packet, raw}] ++ Opts, Timeout);
+  ssl:connect(Host, Port, [binary, {active, true}, {packet, raw},
+                           {keepalive, true}, {nodelay, true}] ++ Opts, Timeout);
 do_connect(Host, Port, Timeout, false, _) ->
-  gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw}], Timeout).
+  gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw},
+                               {keepalive, true}, {nodelay, true}], Timeout).
 
 do_srv_connect(Srv, Timeout, SSL, SslOpts) ->
   {ok, Seeds} = mc_utils:get_srv_seeds(Srv),
